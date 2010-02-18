@@ -91,6 +91,7 @@ public:
 
 	MathVector getDestination(gp_Pnt const& position);
 	gp_Pnt getNextTarget();
+        void increment();
 #if 0
 	void setBlockade();
 #endif

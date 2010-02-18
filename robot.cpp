@@ -1,11 +1,8 @@
-static int img_width;
-static int img_height;
-
-CvScalar const yellow = cvScalar (0, 255, 255);
-CvScalar const black = cvScalar (0, 0, 0);
-CvScalar const blue = cvScalar (255, 0, 0);
-CvScalar const red = cvScalar (0, 0, 255);
-CvScalar const orange = cvScalar (0, 165, 255);
+CvScalar const black    = cvScalar (  0,   0,   0);
+CvScalar const red      = cvScalar (  0,   0, 255);
+CvScalar const orange   = cvScalar (  0, 165, 255);
+CvScalar const yellow   = cvScalar (  0, 255, 255);
+CvScalar const blue     = cvScalar (255,   0,   0);
 
 // f(x) = (1 / (1 + e^(−5 ∙ (x − 1)))) ∙ (1 − 1 / (1 + e^(−5 ∙ (x − 10))))
 #if 0
@@ -34,19 +31,26 @@ calc_velocity (int target_diff, int origin_diff, bool first, bool last)
 
 struct robot
 {
+  static int img_width;
+  static int img_height;
+
   static int const DEFAULT_ROT = 0;
   static int const DEFAULT_MOVEX = 0;
   static int const DEFAULT_MOVEY = 0;
   static int const navigator_step = 100;
-  static int const max_speed = 300;
+  static int const max_speed = 200;
   static int const max_avoid_speed = 150;
-  static int const warn_dist = 60;
-  static int const panic_dist = 90;
-  static int const dist_multiplier = 200;
-  static int const override_step = 100;
+  static size_t const panic_dist[9];
+  static size_t const warn_dist[9];
+  static size_t const dist_multiplier = 200;
+  static size_t const override_step = 100;
+  static size_t const sensor_reads = 10;
+  static size_t const tick_time = 10;
+  static size_t const speed_step = 1000;
+  static size_t const max_retry = 1;
 
-  static int const room_h = 13;
-  static int const room_w = 16;
+  static size_t const room_h = 13;
+  static size_t const room_w = 16;
 
   robot (std::string const& hostname);
   ~robot ();
@@ -59,20 +63,30 @@ struct robot
   void parse_image (RobotinoImage const* image);
   void print (int yadd, char const* fmt, ...);
   void draw_sensors ();
-  void draw_statistics (int timediff, int distancex, int distancey);
+  void draw_statistics (int timediff);
 #endif
-  void update_position (int& timediff, int& distancex, int& distancey);
+  void update_position (int& timediff);
   void prevent_collision ();
   void avoid_obstacle (MathVector curtarget);
-  bool panic ();
+  void update_sensors ();
+  float distance (size_t sensor);
+  bool beyond (size_t const (&dist)[9], char const* name = "panic");
   void set_velocity ();
 
-  void pop_navigator (int current, int count);
+  void local_finished (int current, int count);
   void finished (int current, int count);
 
   void errorCb (int error);
   void connectedCb ();
   void connectionClosedCb ();
+
+  void speak (char const* str);
+  void* speaker ();
+
+  pthread_mutex_t speech_mtx;
+  pthread_cond_t speech_cond;
+  pthread_t speech_thr;
+  std::string speech;
 
   std::vector<Navigator> navigators;
   IplImage* src;
@@ -82,8 +96,12 @@ struct robot
   int rot;   // °/sec rotation
   double movex; // mm/sec (x)
   double movey; // mm/sec (y)
+  double requestx;
+  double requesty;
   double avoidx;
   double avoidy;
+
+  std::vector<std::deque<float> > sensors;
 
   MathVector position;
 #if 0
@@ -97,19 +115,67 @@ struct robot
   std::ofstream travel_log;
   std::ofstream command_log;
   std::ofstream speed_log;
+  std::ofstream sensor_log;
+};
+
+int robot::img_width;
+int robot::img_height;
+
+#if 0
+size_t const robot::panic_dist[9] = {
+  80, // 1
+  140, // 2
+  90, // 3
+  100, // 4
+  90, // 5
+  90, // 6
+  110, // 7
+  90, // 8
+  120, // 9
+};
+#else
+size_t const robot::panic_dist[9] = {
+  70, // 1
+  70, // 2
+  70, // 3
+  70, // 4
+  70, // 5
+  70, // 6
+  70, // 7
+  70, // 8
+  70, // 9
+};
+#endif
+
+size_t const robot::warn_dist[9] = {
+  panic_dist[0] - 20,
+  panic_dist[1] - 20,
+  panic_dist[2] - 20,
+  panic_dist[3] - 20,
+  panic_dist[4] - 20,
+  panic_dist[5] - 20,
+  panic_dist[6] - 20,
+  panic_dist[7] - 20,
+  panic_dist[8] - 20,
 };
 
 robot::robot (std::string const& hostname)
   : src ()
-  //, override (false)
+#if WITH_GUI
   , override (true)
+#else
+  , override (false)
+#endif
   , moving_back (false)
   , local_finish (false)
   , rot (DEFAULT_ROT)
   , movex (DEFAULT_MOVEX)
   , movey (DEFAULT_MOVEY)
+  , requestx (DEFAULT_MOVEX)
+  , requesty (DEFAULT_MOVEY)
   , avoidx (DEFAULT_MOVEX)
   , avoidy (DEFAULT_MOVEY)
+  , sensors (9)
   , position (0, 0, 0)
 #if 0
   , origin ()
@@ -118,16 +184,21 @@ robot::robot (std::string const& hostname)
   , travel_log ("travel.log")
   , command_log ("command.log")
   , speed_log ("speed.log")
+  , sensor_log ("speed.log")
 {
   if (!com.init ())
     throw 1;
 
+  pthread_mutex_init (&speech_mtx, NULL);
+  pthread_cond_init (&speech_cond, NULL);
+  pthread_create (&speech_thr, NULL, (void* (*)(void *))&robot::speaker, this);
+
   std::vector<gp_Pnt> pnts;
-#if 0
-  pnts.push_back (gp_Pnt (   0,    0, 0));
-  pnts.push_back (gp_Pnt (2000,    0, 0));
-  pnts.push_back (gp_Pnt (2000, 2000, 0));
-  pnts.push_back (gp_Pnt (4000, 2000, 0));
+#if 1
+  pnts.push_back (gp_Pnt (0 * 600, 0, 0));
+  pnts.push_back (gp_Pnt (1 * 600, 0, 0));
+  pnts.push_back (gp_Pnt (5 * 600, 0, 0));
+  pnts.push_back (gp_Pnt (8 * 600, 0, 0));
 #else
   pnts.push_back (gp_Pnt (   0,    0, 0));
   pnts.push_back (gp_Pnt (   0,  600, 0));
@@ -176,8 +247,6 @@ robot::robot (std::string const& hostname)
   RobotinoCameraParameters param = com.cameraParameters ();
   param.compression = HighCompression;
   param.resolution = VGA;
-  param.brightness = 50;
-  param.contrast = 50;
   com.setCameraParameters (param);
 
 #if WITH_GUI
@@ -187,6 +256,9 @@ robot::robot (std::string const& hostname)
 
 robot::~robot ()
 {
+  //pthread_kill (speech_thr, SIGTERM);
+  pthread_cond_destroy (&speech_cond);
+  pthread_mutex_destroy (&speech_mtx);
 #if WITH_GUI
   cvReleaseImage (&src);
   cvDestroyWindow ("Live Image");
@@ -210,7 +282,7 @@ robot::run ()
   while (true)
     {
 #if WITH_GUI
-      char c = cvWaitKey (200);
+      char c = cvWaitKey (tick_time);
       switch (c)
         {
         case 'q':
@@ -222,20 +294,20 @@ robot::run ()
           rot -= 10;
           break;
         case 'w':
-          movex += override_step;
+          requestx += override_step;
           break;
         case 's':
-          movex -= override_step;
+          requestx -= override_step;
           break;
         case 'y':
-          movey += override_step;
+          requesty += override_step;
           break;
         case 'x':
-          movey -= override_step;
+          requesty -= override_step;
           break;
         case 'z':
-          movex = -movex;
-          movey = -movey;
+          requestx = -requestx;
+          requesty = -requesty;
           break;
         case 'o':
           override = !override;
@@ -249,8 +321,8 @@ robot::run ()
           com.setOdometry (0, 0, 0);
         case 'e':
           rot = DEFAULT_ROT;
-          movex = DEFAULT_MOVEX;
-          movey = DEFAULT_MOVEY;
+          requestx = DEFAULT_MOVEX;
+          requesty = DEFAULT_MOVEY;
           break;
         case '1':
           conversion = NORMAL;
@@ -260,7 +332,7 @@ robot::run ()
           break;
         }
 #else
-      usleep (20 * 1000);
+      usleep (tick_time * 1000);
 #endif
 
 #if 0
@@ -273,9 +345,10 @@ robot::run ()
         }
 #endif
 
+      int tdiff;
+      update_sensors ();
+      update_position (tdiff);
       set_velocity ();
-      int tdiff, distancex, distancey;
-      update_position (tdiff, distancex, distancey);
 
       if (!com.update ())
         break;
@@ -292,7 +365,7 @@ robot::run ()
             {
             case NORMAL:
               draw_sensors ();
-              draw_statistics (tdiff, distancex, distancey);
+              draw_statistics (tdiff);
 
               img = src;
               break;
@@ -365,8 +438,8 @@ robot::parse_image (RobotinoImage const* image)
   img.composite (route, 0, 0, Magick::BlendCompositeOp);
 #endif
 
-  unsigned int width = 0;
-  unsigned int height = 0;
+  int width = 0;
+  int height = 0;
 
   if (image->parameters.type == JPG)
     {
@@ -467,16 +540,16 @@ robot::draw_sensors ()
         {
           point.x -= 5;
           char buf[100];
-          snprintf (buf, sizeof buf, "%3.0f", com.distance (i + 1) * dist_multiplier);
+          snprintf (buf, sizeof buf, "%3.0f", distance (i));
           sensors[i] = buf;
           cvRectangle (src,
                        cvPoint (point.x - 3, point.y - 10),
                        cvPoint (point.x + 20, point.y + 5),
                        black, CV_FILLED);
           CvScalar colour = yellow;
-          if (com.distance (i + 1) * dist_multiplier > warn_dist)
+          if (distance (i) > warn_dist[i])
             colour = orange;
-          if (com.distance (i + 1) * dist_multiplier > panic_dist)
+          if (distance (i) > panic_dist[i])
             colour = red;
           cvPutText (src, sensors[i].c_str (),
                      cvPoint (point.x, point.y),
@@ -487,23 +560,24 @@ robot::draw_sensors ()
 }
 
 void
-robot::draw_statistics (int timediff, int distancex, int distancey)
+robot::draw_statistics (int timediff)
 {
   if (src)
     {
       print (0,
              "t=%ld ms, "
              "v={%d,%d} mm/s, "
+             "req_v={%d,%d} mm/s, "
              "avoid_v={%d,%d} mm/s, "
-             "d={%ld,%ld} mm, "
              "rot=%d deg/s"
              , timediff
              , int (movex)
              , int (movey)
+             , int (requestx)
+             , int (requesty)
+             , int (avoidy)
              , int (avoidx)
              , int (avoidy)
-             , distancex
-             , distancey
              , rot
              );
       print (-1,
@@ -523,7 +597,7 @@ robot::draw_statistics (int timediff, int distancex, int distancey)
 #endif
 
 void
-robot::update_position (int& timediff, int& distancex, int& distancey)
+robot::update_position (int& timediff)
 {
   timeval now, diff;
   gettimeofday (&now, NULL);
@@ -531,11 +605,9 @@ robot::update_position (int& timediff, int& distancex, int& distancey)
   gettimeofday (&prev, NULL);
 
   timediff = diff.tv_usec / 1000;
-  distancex = ((movex + avoidx) * timediff) / 1000; // in mm
-  distancey = ((movey + avoidy) * timediff) / 1000; // in mm
 
-  position.x += distancex;
-  position.y += distancey;
+  position.x += (int (movex) * timediff) / 1000; // in mm
+  position.y += (int (movey) * timediff) / 1000; // in mm
 
 #if 0
   {
@@ -553,8 +625,8 @@ robot::update_position (int& timediff, int& distancex, int& distancey)
   }
 #endif
 
-#define THRESHOLD 20
 #if 0
+#define THRESHOLD 20
   int target_diffx = position.x - target.x;
   int origin_diffx = position.x - origin.x;
   double velox = calc_velocity (target_diffx, origin_diffx, points.first (), points.last ());
@@ -613,6 +685,8 @@ robot::update_position (int& timediff, int& distancex, int& distancey)
     }
 #endif
 
+  //prevent_collision ();
+
   MathVector vec = nav ().getDestination (gp_Pnt (position.x, position.y, 0));
   while (local_finish)
     {
@@ -633,76 +707,81 @@ robot::update_position (int& timediff, int& distancex, int& distancey)
               , vec.y
              );
 #endif
-      movex = vec.x * max_speed / navigator_step;
-      movey = vec.y * max_speed / navigator_step;
+      requestx = vec.x * max_speed / navigator_step;
+      requesty = vec.y * max_speed / navigator_step;
 
-      if (movex >  max_speed) movex =  max_speed;
-      if (movex < -max_speed) movex = -max_speed;
-      if (movey >  max_speed) movey =  max_speed;
-      if (movey < -max_speed) movey = -max_speed;
-
-      //prevent_collision ();
       avoid_obstacle (vec);
     }
-
-  set_velocity ();
 }
 
 void
 robot::prevent_collision ()
 {
-  static std::vector<std::deque<float> > values (9);
-
-  for (size_t i = 0; i < 9; i++)
-    {
-      values[i].push_back (com.distance (i + 1));
-      if (values[i].size () > 3)
-        values[i].pop_front ();
-    }
-
   avoidx = 0;
   avoidy = 0;
-  for (size_t i = 0; i < values.size (); i++)
+  for (size_t i = 0; i < sensors.size (); i++)
     {
-      std::deque<float> q = values[i];
-      std::sort (q.begin (), q.end ());
+      float dist = distance (i);
 
-      float avoid_v = com.distance (i + 1) * dist_multiplier;
-      avoid_v *= 3;
-
-      if (avoid_v > max_avoid_speed)
-        avoid_v = max_avoid_speed;
-
-      if (avoid_v > warn_dist)
+      if (dist > warn_dist[i])
         {
           printf ("warn_dist for sensor %d\n", i);
           MathVector vec = move_back (i + 1);
-          avoidx += vec.x * avoid_v;
-          avoidy += vec.y * avoid_v;
+          avoidx += vec.x * dist;
+          avoidy += vec.y * dist;
         }
     }
 
+  if (avoidx >  max_avoid_speed) avoidx =  max_avoid_speed;
+  if (avoidx < -max_avoid_speed) avoidx = -max_avoid_speed;
+  if (avoidy >  max_avoid_speed) avoidy =  max_avoid_speed;
+  if (avoidy < -max_avoid_speed) avoidy = -max_avoid_speed;
+}
+
+void
+robot::update_sensors ()
+{
+  for (size_t i = 0; i < 9; i++)
+    {
+      float dist = com.distance (i + 1) * dist_multiplier;
+      sensors[i].push_back (dist);
+      //printf ("sensors[%d].push_back (%f)\n", i, com.distance (i + 1));
+      if (sensors[i].size () > sensor_reads)
+        sensors[i].pop_front ();
+    }
+}
+
+float
+robot::distance (size_t sensor)
+{
+  float dist = 0;
+  foreach (float d, sensors[sensor])
+    dist += d;
+  return dist / sensors[sensor].size ();
 }
 
 bool
-robot::panic ()
+robot::beyond (size_t const (&dist)[9], char const* name)
 {
   bool panic[9] = { 0 };
-  if (   (panic[0] = com.distance (1) * dist_multiplier > panic_dist)
-      || (panic[1] = com.distance (2) * dist_multiplier > panic_dist)
-      || (panic[2] = com.distance (3) * dist_multiplier > panic_dist)
-      || (panic[3] = com.distance (4) * dist_multiplier > panic_dist)
-      || (panic[4] = com.distance (5) * dist_multiplier > panic_dist)
-      || (panic[5] = com.distance (6) * dist_multiplier > panic_dist)
-      || (panic[6] = com.distance (7) * dist_multiplier > panic_dist)
-      || (panic[7] = com.distance (8) * dist_multiplier > panic_dist)
-      || (panic[8] = com.distance (9) * dist_multiplier > panic_dist))
+  if (   (panic[0] = distance (0) > dist[0])
+      || (panic[1] = distance (1) > dist[1])
+      || (panic[2] = distance (2) > dist[2])
+      || (panic[3] = distance (3) > dist[3])
+      || (panic[4] = distance (4) > dist[4])
+      || (panic[5] = distance (5) > dist[5])
+      || (panic[6] = distance (6) > dist[6])
+      || (panic[7] = distance (7) > dist[7])
+      || (panic[8] = distance (8) > dist[8]))
     {
-      printf ("panic on sensors ");
-      for (int i = 0; i < sizeof panic; i++)
-        if (panic[i])
-          printf ("%d:%f ", i + 1, com.distance (i + 1));
-      printf (" at (%f,%f)\n", position.x, position.y);
+      if (!strcmp (name, "panic"))
+        {
+          printf ("%s on sensors ", name);
+          for (size_t i = 0; i < sizeof panic; i++)
+            if (panic[i])
+              printf ("%d:%f ", i, distance (i));
+          printf (" at (%f,%f)\n", position.x, position.y);
+        }
       return true;
     }
   return false;
@@ -714,8 +793,17 @@ robot::avoid_obstacle (MathVector curtarget)
   if (moving_back)
     return;
 
-  if (panic ())
+  if (beyond (panic_dist))
     {
+      speak ("obstacle in the way");
+      if (navigators.size () > max_retry)
+        {
+          speak ("obstacle on a target");
+          navigators.erase (navigators.begin () + 1, navigators.end ());
+          assert (navigators.size () == 1);
+          nav ().increment ();
+        }
+
       Navigator newnav (navigator_step);
 
       MathVector unity = curtarget.unity ();
@@ -729,8 +817,9 @@ robot::avoid_obstacle (MathVector curtarget)
                                    , (next_target.Y () - rev_target.y) / 2
                                    , 0
                                    );
-      MathVector const ovec = rev_to_next.getOrthogonalVector ();
-      MathVector const med_target = rev_target.add (rev_to_next).add (ovec);
+      MathVector const ovec_l = rev_to_next.getOrthogonalVector ();
+      MathVector const ovec_r (-ovec_l.x, -ovec_l.y, -ovec_l.z);
+      MathVector const med_target = rev_target.add (rev_to_next).add (ovec_r);
 
       std::vector<gp_Pnt> points;
       points.push_back (gp_Pnt (position.x, position.y, 0));
@@ -758,7 +847,7 @@ robot::avoid_obstacle (MathVector curtarget)
 
       navigators.push_back (navigator_step);
       nav ().initialize (points);
-      nav ().set_handler ((void(*)(void*, int, int))&robot::pop_navigator, this);
+      nav ().set_handler ((void(*)(void*, int, int))&robot::local_finished, this);
 
       moving_back = true;
     }
@@ -767,11 +856,22 @@ robot::avoid_obstacle (MathVector curtarget)
 void
 robot::set_velocity ()
 {
+  if (abs (requestx - movex) < speed_step) movex = requestx;
+  if (abs (requesty - movey) < speed_step) movey = requesty;
+
+  if (movex > requestx) movex -= speed_step;
+  if (movex < requestx) movex += speed_step;
+  if (movey > requesty) movey -= speed_step;
+  if (movey < requesty) movey += speed_step;
+
   // max hardware velocity
   if (movex >  1400) movex =  1400;
   if (movex < -1400) movex = -1400;
   if (movey >  1400) movex =  1400;
   if (movey < -1400) movex = -1400;
+
+  double movex = this->movex;
+  double movey = this->movey;
 
   if (!override)
     {
@@ -780,16 +880,34 @@ robot::set_velocity ()
       if (movey >  max_speed) movey =  max_speed;
       if (movey < -max_speed) movey = -max_speed;
     }
-  printf ("set_velocity (%f, %f, %d)\n", movex, movey, rot);
-  com.setVelocity (movex + avoidx,      // vx = mm/s
-                   movey + avoidy,      // vy = mm/s
-                   rot);                // omega = deg/s
+
+  if (beyond (warn_dist, "warning"))
+    {
+      if (movex > 0) movex -= movex / 4;
+      if (movex < 0) movex += movex / 4;
+      if (movey > 0) movey -= movey / 4;
+      if (movey < 0) movey += movey / 4;
+    }
+
+#if 0
+  int movex = this->movex + avoidx;
+  int movey = this->movey + avoidy;
+#endif
+
+  printf ("set_velocity (v_r={%f,%f}, v_a={%f,%f}, v={%f,%f}, %d)\n"
+          , requestx, requesty
+          , avoidx, avoidy
+          , movex, movey
+          , rot);
+  com.setVelocity (movex,       // vx = mm/s
+                   movey,       // vy = mm/s
+                   rot);        // omega = deg/s
 }
 
 void
-robot::pop_navigator (int current, int count)
+robot::local_finished (int current, int count)
 {
-  printf ("pop_navigator (%d, %d)\n", current, count);
+  printf ("local_finished (%d, %d)\n", current, count);
   if (current == count)
     local_finish = true;
   else if (current == 1)
@@ -802,8 +920,8 @@ robot::finished (int current, int count)
   printf ("finished (%d, %d)\n", current, count);
   if (current == count)
     {
-      movex = DEFAULT_MOVEX;
-      movey = DEFAULT_MOVEY;
+      requestx = DEFAULT_MOVEX;
+      requesty = DEFAULT_MOVEY;
       override = true;
     }
 }
@@ -811,8 +929,8 @@ robot::finished (int current, int count)
 void
 robot::errorCb (int error)
 {
-  std::cout << "\nError " << RobotinoCom::errorString (error) << '\n';
-  exit (1);
+  std::cout << "\nError: " << RobotinoCom::errorString (error) << '\n';
+  std::exit (1);
 }
 
 void
@@ -825,4 +943,39 @@ void
 robot::connectionClosedCb ()
 {
   std::cout << "\nConnection closed\n";
+}
+
+void
+robot::speak (char const* str)
+{
+#if 0
+  speech = str;
+  puts ("signalling speech condvar");
+  pthread_cond_signal (&speech_cond);
+#endif
+}
+
+void*
+robot::speaker ()
+{
+  int heap_size = 210000;       // default scheme heap size
+  int load_init_files = 1;      // we want the festival init files loaded
+  festival_initialize (load_init_files, heap_size);
+  std::string prev;
+
+  while (true)
+    {
+      puts ("locking speech mutex");
+      pthread_mutex_lock (&speech_mtx);
+      puts ("waiting for speech");
+      pthread_cond_wait (&speech_cond, &speech_mtx);
+      if (prev != speech)
+        {
+          prev = speech;
+          festival_say_text (prev.c_str ());
+        }
+      puts ("done speaking, unlocking mutex");
+      pthread_mutex_unlock (&speech_mtx);
+    }
+  return NULL;
 }

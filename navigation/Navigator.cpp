@@ -500,6 +500,10 @@ gp_Pnt Navigator::getNextTarget(){
 	return pnts[currentTargetPosition+1];
 }
 
+void Navigator::increment(){
+        ++currentTargetPosition;
+}
+
 #if 0
 void Navigator::setBlockade(){
 	blocked = true;

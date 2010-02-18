@@ -1,8 +1,8 @@
 OCCDIR := /opt/OpenCASCADE6.3.0/ros
 LIBPATH = lib
-INCPATH = include
+INCPATH = -Iinclude -I/usr/include/ImageMagick -I/usr/include/festival -I/usr/include/speech_tools
 
-CXXFLAGS = -Wno-pmf-conversions -Dlinux32 -Wall -I$(INCPATH) -I/usr/include/ImageMagick -ggdb3
+CXXFLAGS = -Wno-pmf-conversions -Dlinux32 -Wall $(INCPATH) -ggdb3
 CPPFLAGS = -I$(OCCDIR)/inc -DHAVE_CONFIG_H -I$(OCCDIR)
 LDFLAGS = -Wl,-rpath,. -Wl,-rpath,$(LIBPATH) -L$(LIBPATH) -L.
 
@@ -25,7 +25,7 @@ LDFLAGS +=			\
 
 LDFLAGS += $(foreach lib,$(wildcard $(OCCDIR)/adm/make/*/.libs),-L${lib}) $(foreach lib,$(realpath $(wildcard $(OCCDIR)/adm/make/*/.libs)),-Wl,-rpath,${lib})
 
-LIBS += -lrobotinocom -lnavi
+LIBS += -lrobotinocom -lnavi -lestools -lFestival
 VLIBS += -lhighgui -lcv
 VLIBS += -lMagick++
 

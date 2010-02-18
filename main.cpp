@@ -1,5 +1,7 @@
+#include <csignal>
 #include <cstdlib>
 #include <cstdarg>
+#include <pthread.h>
 #include <sys/time.h>
 
 #include <algorithm>
@@ -12,6 +14,8 @@
 #include <vector>
 
 #include <boost/foreach.hpp>
+
+#include <festival.h>
 
 #if WITH_GUI
 #include <Magick++.h>
