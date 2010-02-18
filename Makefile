@@ -42,4 +42,4 @@ videoclient: main.cpp $(wildcard *.cpp) libnavi.so
 	$(LINK.cpp) $< -o $@ $(LIBS) $(VLIBS) -DWITH_GUI
 
 clean:
-	$(RM) client videoclient
+	$(RM) client videoclient main.o navigation/*.o libnavi.so *.log
