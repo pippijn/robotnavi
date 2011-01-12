@@ -39,15 +39,15 @@ struct robot
   static int const DEFAULT_MOVEY = 0;
   static int const navigator_step = 100;
   static int const max_speed = 200;
-  static int const max_avoid_speed = 150;
+  static int const max_avoid_speed = 1500;
   static size_t const panic_dist[9];
   static size_t const warn_dist[9];
   static size_t const dist_multiplier = 200;
   static size_t const override_step = 100;
   static size_t const sensor_reads = 10;
   static size_t const tick_time = 10;
-  static size_t const speed_step = 1000;
-  static size_t const max_retry = 1;
+  static size_t const speed_step = 50;
+  static size_t const max_retry = 3;
 
   static size_t const room_h = 13;
   static size_t const room_w = 16;
@@ -134,17 +134,31 @@ size_t const robot::panic_dist[9] = {
   120, // 9
 };
 #else
+#if 1
 size_t const robot::panic_dist[9] = {
-  70, // 1
-  70, // 2
-  70, // 3
-  70, // 4
-  70, // 5
-  70, // 6
-  70, // 7
-  70, // 8
-  70, // 9
+  90, // 1
+  90, // 2
+  90, // 3
+  90, // 4
+  90, // 5
+  90, // 6
+  90, // 7
+  90, // 8
+  90, // 9
 };
+#else
+size_t const robot::panic_dist[9] = {
+  40, // 1
+  40, // 2
+  40, // 3
+  40, // 4
+  40, // 5
+  40, // 6
+  40, // 7
+  40, // 8
+  40, // 9
+};
+#endif
 #endif
 
 size_t const robot::warn_dist[9] = {
@@ -184,7 +198,7 @@ robot::robot (std::string const& hostname)
   , travel_log ("travel.log")
   , command_log ("command.log")
   , speed_log ("speed.log")
-  , sensor_log ("speed.log")
+  , sensor_log ("sensor.log")
 {
   if (!com.init ())
     throw 1;
@@ -194,7 +208,7 @@ robot::robot (std::string const& hostname)
   pthread_create (&speech_thr, NULL, (void* (*)(void *))&robot::speaker, this);
 
   std::vector<gp_Pnt> pnts;
-#if 1
+#if 0
   pnts.push_back (gp_Pnt (0 * 600, 0, 0));
   pnts.push_back (gp_Pnt (1 * 600, 0, 0));
   pnts.push_back (gp_Pnt (5 * 600, 0, 0));
@@ -345,13 +359,13 @@ robot::run ()
         }
 #endif
 
+      if (!com.update ())
+        break;
+
       int tdiff;
       update_sensors ();
       update_position (tdiff);
       set_velocity ();
-
-      if (!com.update ())
-        break;
 
 #if WITH_GUI
       RobotinoImage const* image = com.lockImage ();
@@ -685,7 +699,7 @@ robot::update_position (int& timediff)
     }
 #endif
 
-  //prevent_collision ();
+  prevent_collision ();
 
   MathVector vec = nav ().getDestination (gp_Pnt (position.x, position.y, 0));
   while (local_finish)
@@ -710,7 +724,7 @@ robot::update_position (int& timediff)
       requestx = vec.x * max_speed / navigator_step;
       requesty = vec.y * max_speed / navigator_step;
 
-      avoid_obstacle (vec);
+      //avoid_obstacle (vec);
     }
 }
 
@@ -890,8 +904,8 @@ robot::set_velocity ()
     }
 
 #if 0
-  int movex = this->movex + avoidx;
-  int movey = this->movey + avoidy;
+  movex = this->movex + avoidx;
+  movey = this->movey + avoidy;
 #endif
 
   printf ("set_velocity (v_r={%f,%f}, v_a={%f,%f}, v={%f,%f}, %d)\n"
@@ -958,6 +972,7 @@ robot::speak (char const* str)
 void*
 robot::speaker ()
 {
+#if 0
   int heap_size = 210000;       // default scheme heap size
   int load_init_files = 1;      // we want the festival init files loaded
   festival_initialize (load_init_files, heap_size);
@@ -977,5 +992,6 @@ robot::speaker ()
       puts ("done speaking, unlocking mutex");
       pthread_mutex_unlock (&speech_mtx);
     }
+#endif
   return NULL;
 }
