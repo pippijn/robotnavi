@@ -1,0 +1,5 @@
+/client
+/videoclient
+*.o
+*.so
+*.log

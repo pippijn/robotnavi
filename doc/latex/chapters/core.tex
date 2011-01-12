@@ -1,0 +1,436 @@
+\chapter{Der Kern}
+
+\section{Einführung}
+
+Im Rahmen des Labors für Autonome Systeme haben wir einen Robotino \cite{festo}
+programmiert, der einen konfigurierbare Kurs abfährt und dabei Hindernisse
+umfährt. Zur Programmierung haben wir die von FESTO gelieferte C++ API
+verwendet. Die Aufgabe war ursprünglich so angedacht, dass der Roboter eine
+Menge von Strecken und Kreisbögen bekommt und diese dann nacheinander abfährt.
+Wir haben die Aufgabe aber so verstanden, dass wir die Bahn selbst erzeugen
+müssen aus einer Menge von Punkten. Diese Erzeugung haben wir mit OpenCASCADE,
+einer freien Bibliothek für CAD Applikationen, realisiert. Zusätzlich zu der
+Erkennung und Umfahrung der Hindernisse, haben wir eine Hindernisvermeidung
+implementiert, die bereits lange vor einer möglichen Kollision kleine
+Korrekturen an der Fahrbahn vornimmt, die eine Kollision in erster Linie
+verhindern. Zuletzt haben wir noch ansatzweise ein Text-to-Speech Modul
+eingebunden, das kritische Meldungen wie ,,obstacle in the way, rerouting'' zu
+Sprache macht.
+
+In diesem Kapitel wird die Hauptschleife (Main Loop) des Roboters erläutert.
+Diese verwendet die beiden Komponenten ,,Kollisionsvermeidung'' und
+,,Navigator'', welche in den beiden anderen Kapiteln weiter behandelt werden.
+
+
+\section{Initialisierung}
+
+Bei der Initialisierung der Steuersoftware wird zunächst ein Thread erzeugt,
+welcher für die Sprache zuständig ist. Es werden dann vier Protokolle geöffnet,
+welche jeweils einen Aspekt des Verlaufs festhalten:
+
+\begin{itemize}
+	\item \verb|travel.log|
+		protokolliert die momentane Position.
+	\item \verb|command.log|
+		protokolliert den aktuellen absoluten Richtungsvektor, der von Navigator
+		erhalten wurde.
+	\item \verb|speed.log|
+		protokolliert die aktuelle absolute Geschwindigkeit ohne Rücksicht auf
+		Richtung.
+	\item \verb|sensor.log|
+		protokolliert die Eingangswerte der neun Sensoren an Bord des Robotinos.
+\end{itemize}
+
+Anschließend wird der erste Navigator initialisiert mit den Punkten, die
+abgefahren werden sollen. Diese Punkte sind absolut anzugeben und bezeichnen
+Punkte in einem millimetergenauen Koordinatensystem, welches von unserer
+Steuersoftware gepflegt wird. Er wird zusätzlich der \verb|finished| Callback
+im Navigator gesetzt, der bei der erfolgreichen Beendigung der Bahn aufgerufen
+wird. Dieser neu erzeugte Navigator wird dann auf den Navigatorstack gelegt,
+auf den später weiter eingegangen wird. Der Navigator wird mit einer
+Schrittgenauigkeit \verb|navigator_step| initialisiert. Diese
+Schrittgenauigkeit wird im Kapitel ,,Navigator'' genauer erläutert.
+
+Dann werden in der Robotino-Software noch einige Callbacks gesetzt, die sich um
+die Robotino-interne Fehlerbehandlung kümmern, worauf mit dem Verbindungsaufbau
+begonnen wird. Ein Verbindungsversuch wird alle 20000 Millisekunden gestartet,
+bis entweder ein Timeout eintritt oder der Verbindungsaufbau erfolgreich war.
+
+Sobald die Verbindung steht, wird die Kamera, welche sich an Bord des Robotinos
+befindet, initialisiert, damit sie höchstauflösende Bilder mit hoher
+Kompressionsrate an den Client (unserer Steuersoftware) schickt. Diese Bilder
+dienen lediglich der Visualisierung und werden nicht für die Programmlogik
+benötigt. Das Bild der Kamera wird dann in einem OpenCV Fenster dargestellt.
+
+
+\section{Main Loop}
+
+Alle \verb|tick_time| Millisekunden wird eine Iteration des Main Loops
+durchgeführt. Ein solcher Durchlauf sieht folgendermaßen aus, wobei auf die
+Einzelheiten später tiefer eingegangen wird:
+
+\begin{enumerate}
+	\item Tastendruck einlesen
+	
+		Falls Tasten gedrückt wurden, werden die zugehörige Aktionen
+		durchgeführt.
+
+	\item Daten vom Robotino herunterladen
+
+		Am Anfang der Berechnungskette werden die neuen Informationen des
+		Robotinos in den \verb|RobotinoCom|, dem Kommunikator, der von der C++
+		API zur Verfügung gestellt wird, geladen.
+
+	\item Sensordaten aktualisieren
+
+		Es werden ein mal pro Iteration die Sensordaten aktualisiert. Öfter würde
+		sinnfrei sein, da die Daten nicht so schnell von den Sensoren kommen. Um
+		die Aufrufkosten und Netzlast zu reduzieren, werden die Daten
+		zwischengespeichert.
+
+	\item Zielposition aktualisieren
+
+		Anhand der gesammelten und bereits vorhandenen Informationen wird die
+		neue absolute Zielposition berechnet und gesetzt.
+
+	\item Geschwindigkeit setzen
+
+		Damit die Zielposition erreicht wird, wird hier die Geschwindigkeit,
+		sprich der Richtungsvektor, gesetzt.
+
+	\item Bild anzeigen
+
+		Falls die GUI aktiviert ist, wird nun das Kamerabild mit zusätzliche
+		Informationen angereichert und angezeigt.
+
+	\item Logs aktualisieren
+
+		Zuletzt werden die momentane Position, Geschwindigkeit, etc. in die
+		jeweiligen Protokolle geschrieben.
+\end{enumerate}
+
+
+\section{Die GUI}
+
+Die graphische Benutzeroberfläche (GUI) zeigt nützliche Informationen über den
+Zustand des Robotinos und der Bahn an. Es wird auch direkt über diese
+Oberfläche die Möglichkeit geboten, den Robotino manuell zu kontrollieren. Dies
+wird über den sogenannten ,,Override''-Modus erreicht. Solange der Robotino
+sich in diesem Modus befindet, ist der Navigator ausgeschaltet und man kann ihn
+frei positionieren.
+
+\bild{screen1}{10cm}{Die Benutzeroberfläche}
+
+Die Benutzeroberfläche zeigt ein Neuneck, an dessen Ecken die jeweiligen
+Sensordaten zu sehen sind. Diese werden bei jeder Iteration aktualisiert. Die
+Zahlen färben sich orange, falls die Sensorwerte einer Warndistanz
+unterschreiten und Rot, falls sie der Panikdistanz unterschreiten. Ein rotes
+Neuneck bedeutet, dass sich der Robotino im ,,Override''-Modus befindet. Blau
+weist darauf hin, dass er momentan autonom handelt.
+
+Dazu gibt es zwei Statuszeilen. Die obere Zeile zeigt folgende Informationen:
+
+\begin{itemize}
+	\item \verb|t|
+		Die Zeit in Millisekunden, die seit der letzten Iteration vergangen ist.
+		So war zum Beispiel in unseren Tests die \verb|tick_time| 10ms also
+		dauerte eine Berechnung inklusive Netzwerkübertragung und Bildanzeige in
+		der letzten Iteration auf Abbildung 1.1 3ms.
+
+	\item \verb|v|
+		Die momentane Geschwindigkeit in $x$- und $y$-Komponenten aufgeteilt.
+		Diese Zahl kann negativ sein, was bedeutet, dass sich der Robotino
+		rückwärts bewegt.
+
+	\item \verb|req_v|
+		Die gewünschte Geschwindigkeit. Unsere Software kümmert sich um einen
+		gleichmäßigen, ruhigen Übergang zwischen Geschwindigkeiten. Bei jeder
+		Iteration wird die tatsächliche Geschwindigkeit ,,langsam'' an die
+		Zielgeschwindigkeit \verb|req_v| angepasst.
+
+	\item \verb|avoid_v|
+		Die von der Kollisionsvermeidung berechneten Geschwindigkeit, die jedes
+		mal auf den momentanen Geschwindigkeitsvektor addiert wird.
+
+	\item \verb|rot|
+		Die momentane Rotationsgeschwindigkeit in °/s.
+\end{itemize}
+
+Die untere Statuszeile zeigt die momentane absolute Position in cm an.
+
+
+\subsection{Bedienung im ,,Override''-Modus}
+
+Der Robotino lässt sich manuell bedienen, wenn er sich im ,,Override''-Modus
+befindet. Es stehen folgende Tastaturkommandos zur Verfügung:
+
+\begin{itemize}
+	\item \verb|q|
+
+		Beendet die Main Loop, wodurch Schritte zur Terminierung der
+		Netzwerkverbindung, dem Schließen der Protokolldateien und schlussendlich
+		der Beendigung des Kontrollprogramms eingeleitet werden.
+
+	\item \verb|a|
+
+		Erhöht die Rotation nach rechts um 10°/s. Im Falle einer momentanen
+		Linksrotation wird diese dadurch um 10°/s verringert.
+
+	\item \verb|d|
+
+		Erhöht die Rotation nach links um 10°/s. Im Falle einer momentanen
+		Rechtsrotation wird diese dadurch um 10°/s verringert.
+
+	\item \verb|w|
+
+		Erhöht die \verb|req_v|, also die gewünschte Geschwindigkeit, in
+		$x$-Richtung um \verb|override_step| mm/s.
+
+	\item \verb|s|
+
+		Verringert die \verb|req_v|, also die gewünschte Geschwindigkeit, in
+		$x$-Richtung um \verb|override_step| mm/s.
+
+	\item \verb|y|
+
+		Erhöht die \verb|req_v|, also die gewünschte Geschwindigkeit, in
+		$y$-Richtung um \verb|override_step| mm/s.
+
+	\item \verb|x|
+
+		Verringert die \verb|req_v|, also die gewünschte Geschwindigkeit, in
+		$y$-Richtung um \verb|override_step| mm/s.
+
+	\item \verb|z|
+
+		Kehrt die gewünschte Geschwindigkeit um. Wenn sich also beispielsweise
+		der Robotino momentan mit 200 mm/s in $x$- und 250 mm/s in $y$-Richtung
+		bewegt, dann wird er nach dem Drücken auf \verb|z| anfangen, seine
+		Geschwindigkeit zu verringern, um anschließend in die entgegengesetzte
+		Richtung loszufahren.
+
+	\item \verb|o|
+
+		Aktiviert bzw. deaktiviert den ,,Override''-Modus.
+
+	\item \verb|r|
+
+		Setzt die Position und Geschwindigkeit ($x$/$x$/Rotation) zurück auf 0.
+
+	\item \verb|e|
+
+		Wie \verb|r|, behält jedoch die Position bei.
+
+	\item \verb|1|
+
+		Schaltet auf normale Ansicht der GUI.
+
+	\item \verb|2|
+
+		Zeigt nicht mehr die Daten und Bilder, wie in der normalen Ansicht, an,
+		sondern nur noch die Konturen der Objekte. Diese Konturen werden von
+		OpenCV erkannt. Ursprünglich dachten wir, es wäre unsere Aufgabe, diese
+		Konturen zu verwenden, um einer auf dem Boden aufgeklebten Bahn zu
+		folgen. Den Code dazu haben wir nicht verworfen.
+\end{itemize}
+
+
+\section{Bewegung}
+
+\subsection{Kollisionsvermeidung}
+
+In der Funktion zur Bestimmung der nächsten Zielposition, welche bei jeder
+Iteration aufgerufen wird, wird als allererstes die Kollisionsvermeidung
+aktiviert. Diese sorgt für direkte Verhinderung des schlimmsten Falles. Im
+Falle einer Kollision würde der Robotino jede Orientierung verlieren, da er
+komplett blind fährt, also nicht auf das Durchdrehen der Räder oder auf einer
+Verschiebung durch einen Aufprall reagieren kann.
+
+
+\subsection{Hindernisumfahrung und die Navigatoren}
+
+Wie bereits erwähnt, besitzt die Steuersoftware einen \verb|stack|, also einen
+Stapel mit Navigatoren. Dabei gibt es immer mindestens einen, nämlich den
+Hauptnavigator, der den Robotino über die bei der Initialisierung konfigurierte
+Bahn navigiert. Sollte nun ein Hindernis im Weg stehen, so gibt es zwei
+Schritte, die nacheinander eingeleitet werden:
+
+\begin{enumerate}
+	\item Verringern der Geschwindigkeit auf 70\% bei Unterschreitung einer
+		Warndistanz. Diese ist pro Sensor konfigurierbar über das Array
+		\verb|warn_dist|. Standardmäßig ist die Warndistanz 18\% größer, als die
+		Panikdistanz.
+	\item Einleiten des Umfahrungsmechanismus bei Unterschreitung der
+		Panikdistanz. Diese ist, ebenfalls pro Sensor, konfigurierbar über das
+		Array \verb|panic_dist|.
+\end{enumerate}
+
+\subsubsection{Umfahrungsmechanismus}
+
+Der Umfahrungsmechanismus benutzt einen weiteren Navigator, der den aktuellen
+Navigator temporär ersetzt. Die Sequenz sieht folgendermaßen aus:
+
+\begin{enumerate}
+	\item Es werden nur eine bestimmte Anzahl Versuche gestartet, um einen
+		bestimmten Punkt zu erreichen. Diese Anzahl ist über die Konstante
+		\verb|max_retry| konfigurierbar. Falls diese Zahl überschritten wurde,
+		werden alle Ausweichnavigatoren gelöscht, sodass nur noch der
+		Hauptnavigator bleibt. Diesem wird dann mitgeteilt, dass der nächste
+		Punkt auf der Strecke anvisiert werden soll.
+
+	\item Ein neuer Navigator wird erzeugt, der folgende neue Koordinaten zum
+		Abfahren bekommt:
+		\begin{enumerate}
+			\item Die aktuelle Position als Startposition
+			\item Ein Meter entgegengesetzt der momentanen Fahrtrichtung von der
+				aktuellen Position entfernt, hier Sicherheitsposition genannt.
+			\item Ein Punkt, der auf der Mitte des Kreises zwischen neues Ziel und
+				der Sicherheitsposition liegt. Es wird also ein Kreis gezogen,
+				dessen Durchmesser der Abstand zwischen Zielposition und
+				Sicherheitsposition ist. Der dritte Punkt ist auf 90° dieses
+				Kreises.
+			\item Das nächste Ziel des Navigators.
+		\end{enumerate}
+
+	\item Das Flag \verb|moving_back| wird gesetzt. Dieses Flag verhindert, dass
+		der Ausweichmechanismus sofort in der nächsten Iteration wieder aktiviert
+		wird, da der Robotino noch nicht auf die Sicherheitsposition gefahren
+		ist. Solange dieser Flag gesetzt ist, wird nicht auf die Panikdistanz
+		geachtet.
+
+	\item Dem neuen Navigator wird als Handler für das Erreichen eins Punktes
+		auf der Bahn eine Funktion mit dem Namen \verb|local_finished| übergeben,
+		die den Ausweichnavigator entfernt, falls das Ende erreicht wurde. Falls
+		die Sicherheitsposition erreicht wurde, wird das Flag \verb|moving_back|
+		zurückgesetzt, damit der Umfahrungsmechanismus wieder aktiv ist.
+\end{enumerate}
+
+\bild{screen2}{10cm}{GUI im Falle einer Panikattacke}
+
+Wie in Abbildung 1.2 erkennbar ist, wurde der Fuß, der im Weg stand, auf
+Sensoren 0 und 8 erkannt (rot sagt: Panikdistanz wurde unterschritten). Kurz
+vorher sieht man auf der Konsole, dass die Warndistanz ebenfalls unterschritten
+worden war. Danach wird die Ausweichroute berechnet und auf der Konsole
+ausgegeben. Unsere Software schreibt sehr viele Statusinformationen auf die
+Konsole wie auch in einem Protokoll, damit später alle Bewegungen
+nachvollziehbar sind. Die neue Routenberechnung geschieht auf einem Millimeter
+genau, anders als die sehr genaue Darstellung in Abbildung 1.2 vermuten lässt.
+Diese Zahlen werden mit \verb|nearbyint| gerundet.
+
+
+\section{Geschwindigkeitsbestimmung}
+
+Die Ansteuerung der Motoren muss gleitend passieren und darf nicht abrupt sein,
+da sich sonst die Räder ohne tatsächlichen Effekt drehen, also unter dem still
+stehenden Robotino durchdrehen. Dass sich der Robotino nicht bewegt, ist dabei
+nicht das größte Problem. Das weitaus größere Problem ist, dass sich durch das
+drehen der Räder ohne Vorwärtsbewegung der Robotino unberechenbar rotiert,
+wodurch die Navigation unmöglich wird.
+
+Aus diesem Grund haben wir die tatsächliche Geschwindigkeit von der
+Zielgeschwindigkeit entkoppelt. Sie wird wie folgt berechnet:
+
+Es seien gegeben:
+
+\begin{itemize}
+	\item \verb|requestx| und \verb|requesty|, die Zielgeschwindigkeiten in $x$-
+		und $y$-Richtung.
+	\item \verb|movex| und \verb|movey|, die tatsächliche Geschwindigkeitswerte,
+		die an der Hardware übergeben werden.
+	\item \verb|speed_step|, der Schritt, mit dem die Hardwaregeschwindigkeit in
+		jeder Iteration an die Zielgeschwindigkeit angepasst wird.
+	\item \verb|avoidx| und \verb|avoidy|, die Geschwindigkeiten, die von der
+		Kollisionsvermeidung berechnet wurden.
+\end{itemize}
+
+Dann gilt für \verb|requestx|:
+
+\[
+	\text{movex} = \left\{ \begin{array}{rl}
+		\text{requestx}							& \mbox{falls $|$requestx $-$ movex$| <$ speed\_step}	\\
+		\text{movex} - \text{speed\_step}	& \mbox{falls movex $>$ requestx}							\\
+		\text{movex} + \text{speed\_step}	& \mbox{falls movex $<$ requestx}							\\
+	\end{array} \right.
+\]
+
+unter Beachtung der Regel, dass \verb|requestx| niemals größer werden kann als
+1400 und niemals kleiner als -1400, da dies die maximal erreichbare
+Hardwaregeschwindigkeit ist. Größere Werte würden die Odometrie, also die
+Positionsbestimmung, welche auf Basis von Zeit und Geschwindigkeit
+funktioniert, verfälschen.
+
+Danach wird, falls die Warndistanz unterschritten wurde, die Geschwindigkeit
+auf 75\% gedrosselt.
+
+Zuletzt wird \verb|avoidx| auf die Geschwindigkeit addiert.
+
+Für \verb|movey| wird analog verfahren.
+
+
+\section{Sensoren}
+
+Da die Sensoren ein hohes Maß an Rauschen und ungenauen Werten von sich geben,
+speichern wir immer die letzten \verb|sensor_reads| Sensorwerte und bilden
+daraus das arithmetische Mittel.
+
+
+\section{Eine Beispielbahn und die Einstellungen dazu}
+
+\subsection{Einstellungen}
+
+In diesem Abschnitt werden die Werte für die in der vorangegangenen
+Beschreibung benutzten Konstanten aufgelistet, welche für unseren spezifischen
+Fall optimal waren. Sie wurden mit sehr hoher Sorgfalt ausgewählt und für einen
+spezifischen Robotino eingestellt. Sie sind damit spezifisch für den Boden, den
+Robotino, die Bahn, den Raum, die Temperatur und vielen weiteren Faktoren und
+können damit nicht ohne Weiteres für andere Randbedingungen eingesetzt werden.
+
+\begin{itemize}
+	\item \verb|navigator_step|	= 100 mm
+	\item \verb|max_speed|			= 200 mm/s
+	\item \verb|max_avoid_speed|	= 150 mm/s
+	\item \verb|override_step|		= 100 mm/s
+	\item \verb|sensor_reads|		= 10
+	\item \verb|tick_time|			= 10 ms
+	\item \verb|speed_step|			= 50 mm/s/tick
+	\item \verb|max_retry|			= 3 Versuche
+	\item \verb|panic_dist|			=
+	\begin{enumerate}
+		\item 80
+		\item 140
+		\item 90
+		\item 100
+		\item 90
+		\item 90
+		\item 110
+		\item 90
+		\item 120
+	\end{enumerate}
+	\item \verb|warn_dist|			= jeweils 20 weniger als \verb|panic_dist|
+\end{itemize}
+
+Es ist zu Beachten, dass die Werte für die Distanzen unbekannte Maße haben und
+durch Versuche ermittelt wurden. Ein genaues Maß zu ermitteln wäre aufgrund des
+hohen Maßes an Sensorrauschen darüber hinaus sinnfrei gewesen.
+
+
+\subsection{Die Beispielbahn}
+
+Abbildung 1.3 zeigt die Bahn, wie sie vom Robotino gefahren wird, wenn keine
+Hindernisse sich in den weg stellen. Abbildung 1.5 zeigt den Betrag der
+tatsächlichen Hardwaregeschwindigkeit, wie sie auf der geplanten Bahn gesetzt
+wird. Abbildung 1.4 stellt der geplanten Bahn eine Bahn gegenüber, die ein
+Ausweichmannöver aufgrund eines Hindernisses beinhaltet. Abbildung 1.6 zeigt
+die Geschwindigkeit auf dieser Bahn mit Ausweichmannöver.
+
+Zuletzt haben wir noch einen Versuch mit linearer Bahn gestartet, bei dem man
+sehr schön erkennt, wie ausgewichen wird.
+
+\bild{bahn}{10cm}{Die geplante Bahn}
+\bild{bahn_evade}{10cm}{Die geplante Bahn mit einem Ausweichmannöver}
+\bild{bahn_speed}{8cm}{Geschwindigkeit auf der geplanten Bahn}
+\bild{bahn_evade_speed}{8cm}{Geschwindigkeit auf der Bahn mit Ausweichmannöver}
+\bild{linear_evade}{10cm}{Ein Ausweichmannöver auf einer linearen Bahn}
+
+
+% vim:tw=79 sw=3 ts=3 noexpandtab

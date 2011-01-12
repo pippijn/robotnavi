@@ -1,0 +1,35 @@
+\chapter{Kollisionsvermeidung}
+
+Falls sich dem Roboter während seiner Fahrt ein Hindernis in den Weg stellt, so
+gilt es diesem Auszuweichen. Das verwendete Ausweichfahren bestimmt darin einen
+gewissen Abstand zum Hindernis aufzubauen und eine Kurve um diese Hürde zu
+beschreiben. Wenn beim Abfahren der Kurve erneut ein Objekt im Weg ist, so wird
+wieder Distanz dazu geschaffen und eine erneute Kurve berechnet. Da wir aber mit
+mehreren Sensoren arbeiten und von allen Seiten immer mal wieder eine mögliche
+Kollision gemeldet werden kann, gilt es alle Sensoren abzufragen. Wenn nun ein
+Sensor meldet, dass er kurz vor einem Zusammenstoß steht, so muss abhängig vom
+meldenden Sensor unterschiedlich navigiert werden. Der Roboter setzt immer im
+90° Winkel zum Hindernis zurück. Um dies zu realisieren bedient man sich
+einfacher trigonometrischer Funktionen. Zum Verständnis ist es ratsam immer
+wieder einen kleinen Blick auf die Skizze zu Werfen.
+
+Da sich der Roboter, wenn man die Rotation vernachlässigt, in 2 Richtungen
+gleichzeitig bewegen kann (entlang der $x$-Achse und entlang der $y$-Achse) kann
+man die ,,Rückweichrichtung'' ($c$) beschreiben durch einen Vektor, gebildet aus
+Bewegung entlang der x-Achse ($b$) und der $y$-Achse ($a$).
+
+Die Länge von $c$ legen wir fest als 1 und die jeweiligen Winkel sind bekannt.
+So kann man nun einfach die jeweiligen Anteile von $a$ und $b$ berechnen um eine
+Bewegung in $c$-Richtung beschreiben. Dabei bedient man sich folgender Formeln.
+\[b = c \x \cos \alpha\]
+\[a = b \x \tan \alpha\]
+
+Da $c$ immer 1 ist und $\alpha$ sich dadurch erschließt, welcher Sensor ein
+Hindernis meldet, kann man diese Formeln sehr einfach in eine
+Programmier-Funktion umwandeln, der man grad die Sensornummer übergibt und als
+Ergebnis erhält man die nötige Geschwindigkeit entlang der $x$-Achse und der
+$y$-Achse.
+
+\bild{autonome_kreis_compl}{10cm}{Bestimmung der Gegenrichtung}
+
+% vim:tw=79 sw=3 ts=3 noexpandtab

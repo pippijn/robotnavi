@@ -1,0 +1,185 @@
+\chapter{Navigator}
+
+Die Aufgabe der Navigator Klasse ist es dem Robotino die für seine Navigation
+erforderlichen Informationen zur Verfügung zu stellen. Damit dies überhaupt
+möglich ist, müssen dem Navigator die Zielpunkte, die der Robotino abfahren
+möchte, bekannt sein. Diese Zielpunkte werden dem Navigator mittels der Funktion
+\verb|void initialise(vector<gp_Pnt> points)| übergeben.
+
+Die übergebenen Punkte werden mittels des CAD-Kernel Open Cascade
+(www.opencascade.org) zu einer B-Spline-Kurve interpoliert. Die interpolierte
+Kurve entspricht der Strecke, die der Robotino abfahren soll um alle Zielpunkte
+zu erreichen.
+
+
+\section{Vektor-Navigation}
+
+Nachdem der Navigator durch die Übergabe der Zielpunkte initialisiert wurde und
+somit die abzufahrende Strecke ermittelt wurde, kann der Robotino durch Aufruf
+der Funktion \verb|MathVector getDestination(gp_Pnt position)| den
+Richtungsvektor in Kurvenrichtung, abhängig von seiner aktuellen Position,
+abfragen. Die Funktion erwartet dabei als Argument einen Punkt der die aktuelle
+Position des Robotino beinhaltet. Dieser Punkt wird orthogonal auf die intern
+gehaltene Kurve durch die Zielpunkte projiziert. Von dem projizierten Punkt
+ausgehend wird ein Folgepunkt in Kurvenrichtung ermittelt. Der Abstand zwischen
+dem projizierten Punkt und dem Folgepunkt ist frei wählbar und wird dem Navigator
+bei der Initialisierung übergeben. Dabei ist zu beachten, dass es sich bei
+diesem Abstand nicht um einen Streckenabstand in Form einer festen Kurvenlänge
+handelt, sondern um eine Erhöhung der der B-Spline-Kurve zu Grunde liegenden
+nicht linearen U-Unterteilung.
+
+Nachdem der projizierte Punkt und der Folgepunkt ermittelt wurden, wird ein
+Vektor von der aktuellen Position des Robotino zu dem Folgepunkt gebildet und
+zurückgeliefert. Anhand von diesem Vektor weiß der Robotino nun, in Abhängigkeit
+seiner aktuellen Position, in welche Richtung er seine Fahrt fortsetzen muss um
+die nächsten Zielpunkte zu erreichen. Abbildung 3.1 veranschaulicht diesen
+Vorgang.
+
+\bild{grafik_1}{10cm}{Richtungsbestimmung mit Vektor-Navigation}
+
+Bei diesem Navigationsverfahren ist auch sichergestellt, dass der Roboter stets
+der Kurve folgt. Denn wenn er aus irgendwelchen Gründen die Kurvenstrecke
+verlässt wird aufgrund der Navigation in Abhängigkeit der aktuellen Position des
+Roboters der zurückgelieferte Richtungsvektor den Roboter stets wieder auf die
+korrekte Strecke zurückführen. Die einzigen Fehler die dabei auftreten können
+sind Präzisionsfehler seitens des Robotino. Wenn z.B. die Räder des Robotino
+Schlupf haben, hat dies zur Folge, dass die Position an der er sich zu befinden
+glaubt nicht der realen Position entspricht. Dies würde dann zu einem Versatz
+des Kurvenverlaufs in der realen Fahrstrecke führen.
+
+
+Ein weiterer Vorteil der hier vorgestellten Vektor-Navigation ist, dass die
+Vektorlänge je nach Kurvenabschnitt variiert. Durch die nicht lineare
+Unterteilung der B-Spline-Kurve ist der Abstand zwischen dem projizierten Punkt
+und dem Folgepunkt größer oder kleiner, was zu einem längeren oder kürzeren
+Richtungsvektor führt. Wird nun der Richtungsvektor seitens des Robotino nicht
+nur zur Ermittlung der nächsten Fahrtrichtung, sondern auch dessen Länge zur
+Ermittlung der als nächstes zu fahrenden  Geschwindigkeit genutzt, fährt der
+Roboter z.B. in Kurven langsamer als in geraden Abschnitten im Streckenverlauf.
+
+Dieses Verhalten wird durch die interne Darstellung der B-Spline-Kurven
+ermöglicht. Eine B-Spline-Kurve wird nicht linear in U-Werte von 0 bis N
+unterteilt. Dabei werden kurvige Abschnitte in erheblich mehr Abschnitte
+unterteilt als Abschnitte die keine Richtungsänderung beinhalten.
+
+Abbildung 3.2 veranschaulicht diese Begebenheiten.
+
+\bild{grafik-2-3}{10cm}{B-Spline-Kurve}
+
+
+\section{Kreisbogen-Rotations-Navigation}
+
+Bei diesem Navigationsverfahren wird die intern gehalten Kurve in gleichlange
+Abschnitte unterteilt. Wie lang diese Abschnitte sein sollen kann durch den
+Aufrufer in der dafür angelegten Methode \verb|getRotationSegments(double nmbSegs)|
+bestimmt werden. Das dabei übergebene Argument \verb|nmbSegs| gibt die Anzahl
+der Segmente in die die Kurve unterteilt werden soll an. Dabei ist zu beachten,
+dass die Anzahl der Segmente nicht zu klein gewählt werden darf, da sonst die
+Differenz zwischen dem tatsächlichen Segmentverlauf und dem für die Navigation
+verwendeten Kreisbogens zu groß wird. Abbildung 3.3 zeigt ein Beispiel einer in
+gleichlange Segmente unterteilten Kurve an.
+
+\bild{grafik_4}{10cm}{Kurvensegmentierung}
+
+Der Robotino erhält als Ergebnis von diesem Navigationsverfahren eine Folge von
+Rotationsanweisungen mit der zugehörigen Richtung in die die Rotation erfolgen
+soll, sowie die Information über die Segmentlänge der Segmente die die Kurve
+unterteilen. Mit diesen Informationen ist es dem Robotino möglich die
+vorgegebene Strecke abzufahren. Voraussetzung dafür ist, dass der Robotino bei
+gleichbleibender Geschwindigkeit stets vorwärts fährt und innerhalb der Zeit, die
+er zu dem Abfahren der stets gleichlangen Segmente benötigt, sich um den jeweils
+angegebenen Winkel rotiert. Die Rotation muss natürlich je nach Kurvenverlauf
+entweder nach links oder rechts erfolgen. Die Information über die Richtung in
+die die Rotation erfolgen soll ist jeweils mit angegeben.
+
+Der Winkel um den sich der Robotino im Verlauf der Fahrt entlang eines Segments
+rotieren muss wird durch den Schnittwinkel zwischen den beiden Tangenten im
+Anfangs- und Endpunkt des Kurvensegmentes bestimmt. Abbildung 3.4
+veranschaulicht dies.
+
+\bild{grafik_5}{10cm}{Rotationsbestimmung}
+
+Da der Winkel allein nicht ausreicht um den Robotino die gewünschte Strecke
+fahren zu lassen muss ermittelt werden, ob sich der Robotino auf seiner Fahrt
+entlang des jeweiligen Kurvensegments nach links oder rechts rotieren muss.
+
+Um dies zu ermitteln wird zunächst der Vektor zwischen dem Startpunkt und dem
+Endpunkt des Segments ermittelt (siehe Abbildung 3.5).
+
+\bild{grafik_6}{10cm}{Rotationsrichtungsbestimmung}
+
+Anhand der Koordinaten des Vektors wird der Vektor in eine von acht
+Richtungskategorien eingeordnet. Abbildung 3.6 zeigt die verschiedenen
+Richtungskategorien auf.
+
+\bild{grafik_7}{10cm}{Richtungskategorien}
+
+Selbiges muss nun auch noch mit dem Vektor zwischen Segmentsstart- und
+Segmentsendpunkt des vorherigen Segments getan werden.
+
+Nach dem man nun den Richtungsvektor des aktuellen sowie des vorherigen
+Segmentes hat, kann man anhand der Schnittwinkel der beiden Vektoren zur X-Achse
+ermitteln ob der aktuelle Vektor rechts oder links von dem vorangegangen Vektor
+zeigt.
+
+Sind beispielsweise beide Vektoren von Typ 3 und ist der Schnittwinkel des
+aktuellen Vektors zur X-Achse größer als der Schnittwinkel der X-Achse zum
+vorangegangenen Vektor, so befindet sich der aktuelle Vektor rechts von dem
+vorangegangen. Sollte der Winkel des aktuellen Vektors kleiner als der des
+vorangegangen sein befindet sich der aktuelle links von dem vorangegangen
+Vektor.
+
+\bild{grafik_8}{10cm}{Vektoren im vierten Quadrant}
+
+Die Überprüfung des Schnittwinkels zur X-Achse ist jedoch nur erforderlich wenn
+die beiden Vektoren vom selben Typ sind. Sind sie nicht vom selben Typ, befinden
+sich also nicht im selben Quadranten des Koordinatensystems, so kann man sofort
+eine Aussage treffen. Ist beispielsweise der vorangegangene Vektor vom Typ 2 so
+befinden sich alle Vektoren vom Typ 7, 8 und 1 links von dem Vorangegangenen,
+alle Vektoren vom Typ 3, 4 oder 1 befinden sich rechts vom Vorangegangen. Sollte
+der aktuelle Vektor vom Typ 6 sein ist es egal ob nach links oder rechts rotiert
+wird.
+
+\bild{grafik_9}{10cm}{Vektortypen im Einheitskreis}
+
+
+\section{Vergleich der Navigationsverfahren}
+
+Vorab muss an dieser Stelle erwähnt werden, dass wir nur die Vektor-Navigation
+in der Praxis eingesetzt haben. Ein Praxistest mit der
+Kreisbogen-Rotations-Navigation war uns in der vorgegebenen Zeit leider nicht
+mehr möglich.
+
+Auch wenn es uns nicht möglich war beide Verfahren in der Praxis zu testen, ist
+davon auszugehen, dass beide Verfahren zweifellos in der Lage sind den Roboter
+entlang der vorgegebenen Strecke an seine Zielpunkte zu navigieren. Die
+Ungenauigkeiten die dabei auftreten können hängen bei beiden Verfahren nicht von
+dem jeweiligen Algorithmus sondern von Umgebungseinflüssen wie z.B. der Schlupf
+der Räder auf glatten Oberflächen.
+
+Ein Vorteil der Vektornavigation ist, dass der Roboter auch von einer
+inkorrekten Position stets wieder auf die korrekte Strecke zurückgeführt wird.
+Dies könnte z.B. passieren, wenn der Roboter auf seiner Fahrt zu spät abbremst.
+Da die die Vektor-Navigation stets von der aktuellen Position des Roboters
+arbeitet wird der Richtungsvektor auch von einer Fehlposition ausgehend korrekt
+ermittelt. Bei der Kreisbogen-Rotations-Navigation hingegen ist eine derartige
+Korrektur nicht ohne weiteres möglich, denn es wird bei diesem Verfahren stets
+davon ausgegangen das der Roboter mit einer konstanten Geschwindigkeit ein
+Segment fehlerfrei abfährt. Eine Überprüfung seiner tatsächlichen Position
+findet dabei nicht statt.
+
+Ein klarer Nachteil der Vektor-Navigation ist jedoch, dass der Robotino nicht
+mit der Kamera voraus entlang der Strecke fährt. Das wäre zwar möglich, würde
+jedoch eine Ausrichtung vor jedem zu fahrenden Vektor erfordern, was wiederum zu
+einer Verzögerung und somit zu einer nicht fließenden Fahrt führen würde. Bei
+der Kreisbogen-Rotations-Navigation hingegen ist eine Fahrt mit der Kamera in
+Fahrtrichtung problemlos gegeben.
+
+Abschließen kann man wohl sagen, dass die Vektor-Navigation aufgrund ihrer
+weniger aufwendigen Implementierung, für Einsätze bei denen eine Ausrichtung der
+Kamera in Fahrtrichtung nicht erforderlich ist, zu empfehlen ist. Ist jedoch
+eine Ausrichtung der Kamera erforderlich, ist die
+Kreisbogen-Rotations-Navigation vermutlich die bessere Wahl.
+
+
+% vim:tw=79 sw=3 ts=3 noexpandtab

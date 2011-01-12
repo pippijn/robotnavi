@@ -1,0 +1,99 @@
+\documentclass[12pt,a4paper,german,headsepline,twoside,DIV15,BCOR12mm]{scrbook}
+\usepackage{caption}
+\usepackage{etex}
+\usepackage{babel}
+\usepackage{enumerate}
+\usepackage[fleqn,intlimits]{amsmath}
+\usepackage[utf8x]{inputenc}
+\usepackage{amsthm}
+\usepackage{color}
+\usepackage{makeidx}
+\usepackage{needspace}
+
+\makeatletter
+
+	\usepackage[pdftex]{graphicx}
+	\newcommand{\bild}[3]{
+		\begin{figure}
+			\caption{#3}
+			\begin{center}
+				\boxed{\includegraphics[width=#2]{img/#1.pdf}}
+			\end{center}
+		\end{figure}
+	}
+	\usepackage[implicit,naturalnames]{hyperref}
+	\hypersetup{pdftitle={Autonome Systeme Laborbericht},
+		pdfsubject={Robotino},
+		pdfauthor={Pippijn van Steenhoven},
+		pdfkeywords={Robotino},
+		pdfcreator={PDFLaTeX},
+		pdfproducer={Pippijn van Steenhoven},
+		colorlinks=true,
+		pdfstartview={FitH 1000},
+		bookmarks=true,
+		bookmarksopen=true,
+		linkcolor=farbe,
+		urlcolor=farbe
+	}
+
+	\mathchardef\ordinarycolon\mathcode`\:
+	\mathcode`\:=\string"8000
+	\begingroup \catcode`\:=\active
+		\gdef:{\mathrel{\mathop\ordinarycolon}}
+	\endgroup
+
+\makeatother
+
+\definecolor{farbe}{rgb}{.68,.35,0}
+
+\newcommand{\PS}{\ensuremath{\mathcal{P}} }
+\newcommand{\N}{\ensuremath{\mathbb{N}} }
+\newcommand{\R}{\ensuremath{\mathbb{R}} }
+\newcommand{\Q}{\ensuremath{\mathbb{Q}} }
+\newcommand{\Z}{\ensuremath{\mathbb{Z}} }
+\newcommand{\C}{\ensuremath{\mathbb{C}} }
+
+\newcommand{\x}{\cdot}
+\newcommand{\error}{\lightning}
+\newcommand{\ok}{\checkmark}
+
+\renewcommand{\epsilon}{\varepsilon}
+\newcommand{\eps}{\varepsilon}
+\renewcommand{\phi}{\varphi}
+\renewcommand{\rho}{\varrho}
+
+\sloppy
+\frenchspacing
+\parskip=3pt
+\parindent=0pt
+
+\setcounter{tocdepth}{1}
+
+\makeindex
+
+
+\begin{document}
+
+\input{title}
+
+\hrule
+
+\input{copyright}
+   
+\vfill
+
+\tableofcontents
+
+\vfill
+\pagebreak
+
+\input{content}
+
+\listoffigures
+
+\bibliographystyle{alpha}
+\bibliography{main}
+
+\end{document}
+
+% vim:tw=79 sw=3 ts=3 noexpandtab
