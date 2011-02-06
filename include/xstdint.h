@@ -15,7 +15,7 @@ typedef long long int int64_t;
 typedef long long unsigned int uint64_t;
 #else
 typedef long int int64_t;
-typedef long unsigend int uint64_t;
+typedef long unsigned int uint64_t;
 #endif
 #else
 #include <stdint.h>
