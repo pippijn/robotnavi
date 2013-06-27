@@ -1,0 +1,57 @@
+\chapter{Erfahrungen}
+
+In diesem kurzen Kapitel beschreiben wir unsere persönlichen Erfahrungen mit
+der Robotino Hardware und der bereitgestellten C++ API, sowie allgemein mit dem
+Labor und der Veranstaltung. Wir hatten alle noch nie etwas in dieser Richtung
+getan. Das, was am nächsten dran war, war das Automatisierungslabor, bei dem
+wir in STEP7 zwei Industrieroboter programmieren mussten. Diese Erfahrung war
+in fast allen Punkten sehr anders als die Erfahrung im Autonome System Labor.
+
+
+\section{Hardware}
+
+Die Hardware des Robotinos war für unsere Verhältnisse sehr ungenau. Wir kommen
+von der Softwarewelt, wo man mit beliebiger Genauigkeit rechnen und mit relativ
+hoher Sicherheit sagen kann, dass die gleiche Eingaben immer das gleiche
+Ergebnis liefern. Diese Erfahrung mit einer sich bewegenden, ungenauen
+Hardware, war sehr interessant und lehrreich.
+
+Wir haben viele verschiedene Methoden entwickelt, um gegen die Ungenauigkeit
+vorzugehen, wie zum Beispiel eine konstante Rotation von 1°/s, die immer zu der
+aktuellen Rotation addiert wird, um die Abweichung eines der Robotinos
+entgegenzuwirken. Eine Ungenauigkeit, die erzeugt wird durch zu schnelles
+hochfahren der Motoren existiert in der Form in der Softwarewelt auch nicht und
+wir haben, um dafür eine gute Lösung zu finden, auch zwei Anläufe gebraucht.
+
+Auch für die Sensoren mussten wir eine Lösung finden gegen das Rauschen. Das
+Problem war, dass einige Sensoren eine so hohe Varianz hatten in ihren
+Messwerten, dass die Panikdistanz entweder viel zu oft unterschritten wurde
+oder, indem wir die Empfindlichkeit zu sehr heruntersetzten, nie unterschritten
+wurde und der Robotino mit dem Hindernis kollidierte.
+
+
+\section{Software}
+
+Die C++ API war sehr einfach zu bedienen. Es war hinreichend dokumentiert und
+hat jede Funktionalität geboten, die wir gebraucht haben. Zwar konnte die
+verwendete Version keine interne Odometrie, aber vermutlich war unsere eigene
+sowieso besser. Es wäre eine gute ,,zweite Meinung'' gewesen, die wir als
+sekundäre Odometrie hätten verwenden können.
+
+
+\section{Allgemein}
+
+Das Labor wurde gut unterstützt, aber es wurde auch genügend Freiheit gelassen,
+die Aufgabenstellung anders zu interpretieren. Besonders letzteres war für uns
+das, was es auszeichnete gegenüber allen anderen Laborveranstaltungen, bei
+denen man eine genaue Aufgabe bekommt und bei denen das Ergebnis genau mit den
+Erwartungen übereinstimmen soll. Ein solches, striktes, Labor ist natürlich für
+den Prüfer um vieles einfacher, weil dieser nur Punkte auf einer Liste
+durchgehen und nachsehen muss, ob alles funktioniert.
+
+Wir wünschen sowohl den unterstützenden Professoren als auch den zukünftigen
+Laborteilnehmern ähnliche Erfahrungen, wie wir sie gemacht haben. Das Labor
+sollte auf jeden Fall genau so weitergeführt werden, wie wir es erlebt haben.
+
+
+% vim:tw=79 sw=3 ts=3 noexpandtab
